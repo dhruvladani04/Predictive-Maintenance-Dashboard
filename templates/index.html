@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Real-time Predictive Maintenance Dashboard</title>
+    <!-- Tailwind CSS for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Chart.js for visualizations -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        /* Custom styles for the glowing effect based on status */
+        .status-healthy {
+            box-shadow: 0 0 20px rgba(34, 197, 94, 0.6);
+        }
+        .status-imminent {
+            box-shadow: 0 0 20px rgba(239, 68, 68, 0.7);
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-white p-4 lg:p-8">
+    <div class="max-w-7xl mx-auto">
+        <!-- Header -->
+        <header class="mb-8">
+            <h1 class="text-3xl font-bold text-gray-200">Predictive Maintenance Dashboard</h1>
+            <p class="text-gray-400">Live monitoring of Turbine G-42 sensor data and failure prediction.</p>
+        </header>
+
+        <!-- Main Grid -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+            <!-- Left Column: Status and Key Metrics -->
+            <div class="lg:col-span-1 bg-gray-800 p-6 rounded-2xl space-y-6">
+                <!-- Status Card -->
+                <div id="status-card" class="p-6 rounded-2xl text-center transition-all duration-500">
+                    <h2 class="text-lg font-semibold text-gray-400 mb-2">MACHINE STATUS</h2>
+                    <p id="status-text" class="text-4xl font-bold">CONNECTING...</p>
+                </div>
+
+                <!-- Key Metrics -->
+                <div>
+                    <h3 class="text-lg font-semibold text-gray-300 mb-4">Key Metrics</h3>
+                    <div class="space-y-4">
+                        <div class="flex justify-between items-center bg-gray-700/50 p-3 rounded-lg">
+                            <span class="text-gray-400">Failure Probability</span>
+                            <span id="failure-prob" class="font-semibold text-xl">--%</span>
+                        </div>
+                        <div class="flex justify-between items-center bg-gray-700/50 p-3 rounded-lg">
+                            <span class="text-gray-400">Current Cycle</span>
+                            <span id="cycle-count" class="font-semibold text-xl">--</span>
+                        </div>
+                        <div class="flex justify-between items-center bg-gray-700/50 p-3 rounded-lg">
+                            <span class="text-gray-400">System Health Score</span>
+                            <span id="health-score" class="font-semibold text-xl">--%</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Column: Sensor Gauges -->
+            <div class="lg:col-span-2 bg-gray-800 p-6 rounded-2xl">
+                <h3 class="text-lg font-semibold text-gray-300 mb-4">Live Sensor Readings</h3>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-6 text-center">
+                    <!-- Temperature -->
+                    <div>
+                        <canvas id="temp-gauge"></canvas>
+                        <p class="mt-2 font-semibold text-xl" id="temp-value">-- °C</p>
+                        <p class="text-gray-400">Temperature</p>
+                    </div>
+                    <!-- Vibration -->
+                    <div>
+                        <canvas id="vibration-gauge"></canvas>
+                        <p class="mt-2 font-semibold text-xl" id="vibration-value">-- Hz</p>
+                        <p class="text-gray-400">Vibration</p>
+                    </div>
+                    <!-- Pressure -->
+                    <div>
+                        <canvas id="pressure-gauge"></canvas>
+                        <p class="mt-2 font-semibold text-xl" id="pressure-value">-- PSI</p>
+                        <p class="text-gray-400">Pressure</p>
+                    </div>
+                    <!-- RPM -->
+                    <div>
+                        <canvas id="rpm-gauge"></canvas>
+                        <p class="mt-2 font-semibold text-xl" id="rpm-value">-- RPM</p>
+                        <p class="text-gray-400">Rotation</p>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Full Width Bottom Row: Live Chart -->
+            <div class="lg:col-span-3 bg-gray-800 p-6 rounded-2xl">
+                <h3 class="text-lg font-semibold text-gray-300 mb-4">Sensor Trend (Last 30 Readings)</h3>
+                <canvas id="live-chart" style="height: 300px;"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- Chart.js Configuration ---
+        const CHART_FONT_COLOR = 'rgba(209, 213, 219, 0.7)';
+        
+        // Helper function to create a gauge chart
+        function createGauge(ctx, label, color, max) {
+            return new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    datasets: [{
+                        data: [0, max],
+                        backgroundColor: [color, 'rgba(255, 255, 255, 0.1)'],
+                        borderColor: 'transparent',
+                        borderRadius: 20
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    circumference: 180,
+                    rotation: -90,
+                    cutout: '70%',
+                    plugins: { tooltip: { enabled: false }, legend: { display: false } },
+                }
+            });
+        }
+        
+        const tempGauge = createGauge(document.getElementById('temp-gauge').getContext('2d'), 'Temp', '#f97316', 120);
+        const vibrationGauge = createGauge(document.getElementById('vibration-gauge').getContext('2d'), 'Vibration', '#3b82f6', 50);
+        const pressureGauge = createGauge(document.getElementById('pressure-gauge').getContext('2d'), 'Pressure', '#8b5cf6', 200);
+        const rpmGauge = createGauge(document.getElementById('rpm-gauge').getContext('2d'), 'RPM', '#14b8a6', 2000);
+
+        // Live Line Chart
+        const liveChartCtx = document.getElementById('live-chart').getContext('2d');
+        const liveChart = new Chart(liveChartCtx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [
+                    {
+                        label: 'Temperature (°C)',
+                        data: [],
+                        borderColor: '#f97316',
+                        backgroundColor: 'rgba(249, 115, 22, 0.1)',
+                        fill: true,
+                        tension: 0.4,
+                        yAxisID: 'y'
+                    },
+                    {
+                        label: 'Vibration (Hz)',
+                        data: [],
+                        borderColor: '#3b82f6',
+                        backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                        fill: true,
+                        tension: 0.4,
+                        yAxisID: 'y1'
+                    }
+                ]
+            },
+            options: {
+                scales: {
+                    x: { ticks: { color: CHART_FONT_COLOR, display: false }, grid: { color: 'rgba(255,255,255,0.1)' } },
+                    y: { type: 'linear', display: true, position: 'left', ticks: { color: '#f97316' }, grid: { display: false } },
+                    y1: { type: 'linear', display: true, position: 'right', ticks: { color: '#3b82f6' }, grid: { color: 'rgba(255,255,255,0.1)' } }
+                },
+                plugins: { legend: { labels: { color: CHART_FONT_COLOR } } }
+            }
+        });
+
+        // --- Data Fetching and UI Update Logic ---
+        const MAX_CHART_POINTS = 30;
+        
+        async function fetchData() {
+            try {
+                const response = await fetch('/data');
+                if (!response.ok) throw new Error('Network response was not ok');
+                const data = await response.json();
+
+                // Update Status Card
+                const statusCard = document.getElementById('status-card');
+                const statusText = document.getElementById('status-text');
+                statusText.textContent = data.status;
+                if (data.status === 'HEALTHY') {
+                    statusCard.className = 'p-6 rounded-2xl text-center transition-all duration-500 bg-green-500/20 text-green-400 status-healthy';
+                } else {
+                    statusCard.className = 'p-6 rounded-2xl text-center transition-all duration-500 bg-red-500/30 text-red-500 status-imminent animate-pulse';
+                }
+
+                // Update Key Metrics
+                document.getElementById('failure-prob').textContent = `${data.failure_probability}%`;
+                document.getElementById('cycle-count').textContent = data.cycle;
+                document.getElementById('health-score').textContent = `${data.health_score}%`;
+                
+                // Update Gauges
+                updateGauge(tempGauge, data.temperature_celsius);
+                document.getElementById('temp-value').textContent = `${data.temperature_celsius} °C`;
+
+                updateGauge(vibrationGauge, data.vibration_hz);
+                document.getElementById('vibration-value').textContent = `${data.vibration_hz} Hz`;
+
+                updateGauge(pressureGauge, data.pressure_psi);
+                document.getElementById('pressure-value').textContent = `${data.pressure_psi} PSI`;
+                
+                updateGauge(rpmGauge, data.rotation_rpm);
+                document.getElementById('rpm-value').textContent = `${data.rotation_rpm} RPM`;
+
+                // Update Live Chart
+                updateLineChart(liveChart, data.cycle, [data.temperature_celsius, data.vibration_hz]);
+
+            } catch (error) {
+                console.error("Error fetching data:", error);
+                document.getElementById('status-text').textContent = "DISCONNECTED";
+                document.getElementById('status-card').className = 'p-6 rounded-2xl text-center transition-all duration-500 bg-gray-600 text-gray-400';
+            }
+        }
+
+        function updateGauge(gauge, value) {
+            gauge.data.datasets[0].data[0] = value;
+            gauge.data.datasets[0].data[1] = gauge.options.plugins.max - value;
+            gauge.update('none');
+        }
+        
+        function updateLineChart(chart, newLabel, newDatas) {
+            chart.data.labels.push(newLabel);
+            chart.data.datasets.forEach((dataset, index) => {
+                dataset.data.push(newDatas[index]);
+            });
+
+            if (chart.data.labels.length > MAX_CHART_POINTS) {
+                chart.data.labels.shift();
+                chart.data.datasets.forEach(dataset => dataset.data.shift());
+            }
+            chart.update();
+        }
+
+        // Fetch data every 2 seconds
+        setInterval(fetchData, 2000);
+        // Initial fetch
+        fetchData();
+    </script>
+</body>
+</html>
